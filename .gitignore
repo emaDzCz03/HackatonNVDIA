@@ -1,0 +1,10 @@
+node_modules/
+.firebase/
+.env
+.env.*
+firebase-debug.log
+firestore-debug.log
+coverage/
+dist/
+ml/vision/data/raw/*
+!ml/vision/data/raw/.gitkeep
