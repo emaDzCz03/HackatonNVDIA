@@ -6,3 +6,7 @@ opencv-python-headless
 numpy
 websockets
 cryptography
+openai
+python-dotenv
+firebase-admin
+instructor

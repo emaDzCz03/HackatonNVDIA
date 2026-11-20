@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="description" content="Recibe mercancía, actualiza existencias y conoce tus costos desde un solo lugar.">
   <meta name="theme-color" content="#2d754d">
   <title>Inventario Claro | Control sencillo para tu negocio</title>
@@ -31,6 +31,7 @@
       <a href="#beneficios">Beneficios</a>
       <a href="#como-funciona">Cómo funciona</a>
       <a href="#auditoria">Auditoría</a>
+      <a href="#asistente">Asistente</a>
       <a class="nav-cta" href="#comenzar">Conoce la app <span aria-hidden="true">↗</span></a>
     </nav>
   </header>
@@ -173,6 +174,50 @@
           <p id="audit-attention" class="audit-attention" hidden></p>
           <img id="audit-annotated" class="audit-annotated" alt="Foto del anaquel con detecciones anotadas">
         </div>
+      </div>
+    </section>
+
+    <section class="assistant page-width" id="asistente" aria-labelledby="assistant-title">
+      <div class="audit-heading">
+        <p class="eyebrow"><span aria-hidden="true"></span> Asistente con IA</p>
+        <h2 id="assistant-title">Pregúntale a tu inventario</h2>
+        <p>Consulta existencias y márgenes, registra entradas, mermas y cambios de precio. Nada se guarda hasta que tú lo confirmas.</p>
+      </div>
+
+      <div class="chat" id="chat">
+        <header class="chat-header">
+          <button class="chat-back" id="chat-back" type="button" aria-label="Regresar">
+            <span aria-hidden="true">←</span>
+          </button>
+          <span class="chat-avatar" aria-hidden="true">IA</span>
+          <span class="chat-title">
+            <strong>Asistente de inventario</strong>
+            <small><span class="chat-dot" aria-hidden="true"></span> Datos en vivo · guarda solo al confirmar</small>
+          </span>
+        </header>
+
+        <ol class="chat-log" id="chat-log" aria-live="polite" aria-label="Conversación con el asistente">
+          <li class="chat-bubble is-bot">¡Hola! Pregúntame por tus existencias, cuánto tienes en mercancía o cuánto le ganas a un producto.</li>
+        </ol>
+
+        <div class="chat-chips" id="chat-chips" role="group" aria-label="Preguntas sugeridas">
+          <button type="button" class="chat-chip" data-accion="resurtido">Lista de resurtido para WhatsApp</button>
+          <button type="button" class="chat-chip">¿Qué me falta resurtir?</button>
+          <button type="button" class="chat-chip">¿Cuánto tengo en mercancía?</button>
+          <button type="button" class="chat-chip">Me llegaron 2 six de Tecate a 110 cada six, la vendo a 25</button>
+          <button type="button" class="chat-chip">Se me rompieron 3 cocas</button>
+          <button type="button" class="chat-chip">Sube la coca a 28</button>
+          <button type="button" class="chat-chip">¿Cuánto le gano a la coca?</button>
+        </div>
+
+        <form class="chat-form" id="chat-form">
+          <label class="visually-hidden" for="chat-input">Escribe tu pregunta</label>
+          <textarea id="chat-input" class="chat-input" rows="1" maxlength="1000" placeholder="Escribe tu pregunta…"
+            enterkeyhint="send" autocomplete="off" required></textarea>
+          <button class="chat-send" type="submit" aria-label="Enviar">
+            <span aria-hidden="true">➤</span>
+          </button>
+        </form>
       </div>
     </section>
   </main>

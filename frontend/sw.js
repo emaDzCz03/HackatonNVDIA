@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v9";
 const CACHE_NAME = `anaqueles-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [

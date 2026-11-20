@@ -4,18 +4,29 @@ import ipaddress
 import logging
 import os
 import socket
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
-from typing import Any, List
+import time
+from typing import Any, List, Literal
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from openai import OpenAIError
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+
+from instructor.core.exceptions import InstructorError
+from ml.assistant.asistente import responder
+from ml.assistant.bd import contexto_inventario, lista_resurtido
+from ml.assistant.escritura import confirmar
+from ml.assistant.esquemas import Confirmacion
+from ml.assistant.tarjetas import salida_para_app
 
 
 PROJECT_PATH = Path(__file__).resolve().parent
@@ -120,6 +131,8 @@ def decode_frame(data: bytes | str) -> np.ndarray | None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global model
+    # Abre la conexión a Firestore en segundo plano para que la primera pregunta no tarde.
+    threading.Thread(target=contexto_inventario, daemon=True).start()
     if ENGINE_PATH.is_file():
         import torch
 
@@ -345,6 +358,71 @@ async def auditar_en_vivo(websocket: WebSocket) -> None:
             })
     except WebSocketDisconnect:
         pass
+
+
+log_asistente = logging.getLogger("uvicorn.error")
+
+
+class Turno(BaseModel):
+    rol: Literal["usuario", "asistente"]
+    texto: str = Field(max_length=2000)
+
+
+class MensajeAsistente(BaseModel):
+    mensaje: str = Field(min_length=1, max_length=1000)
+    historial: list[Turno] = Field(default_factory=list, max_length=6)
+
+
+@app.post("/asistente")
+async def asistente(peticion: MensajeAsistente) -> dict[str, Any]:
+    inicio = time.perf_counter()
+    try:
+        contexto = await run_in_threadpool(contexto_inventario)
+        segundos_bd = time.perf_counter() - inicio
+        historial = [turno.model_dump() for turno in peticion.historial]
+        respuesta, proveedor = await run_in_threadpool(responder, peticion.mensaje, contexto, historial)
+        segundos_modelo = time.perf_counter() - inicio - segundos_bd
+    except (OpenAIError, InstructorError):
+        logger.exception("Falló la llamada al modelo del asistente.")
+        raise HTTPException(status_code=503, detail="El asistente no está disponible. Intenta de nuevo.")
+
+    try:
+        salida = await run_in_threadpool(salida_para_app, respuesta)
+    except Exception:
+        # Armar la tarjeta lee Firestore; si falla, se devuelve el texto sin tarjeta en vez de un 500.
+        logger.exception("No se pudo armar la tarjeta del asistente.")
+        salida = {"estado": respuesta.estado, "tarjeta": None,
+                  "mensaje": "No pude consultar tu inventario para armar la tarjeta. Intenta de nuevo en un minuto."}
+
+    log_asistente.info(
+        "[asistente] %r | total %.1f s (Firestore %.1f s, modelo %.1f s) | %s | %s",
+        peticion.mensaje, time.perf_counter() - inicio, segundos_bd, segundos_modelo, proveedor,
+        respuesta.model_dump_json(exclude_none=True),
+    )
+    return salida
+
+
+@app.get("/resurtido")
+async def resurtido() -> dict[str, Any]:
+    """Lista de compras sin pasar por el modelo: instantánea y sin riesgo de inventar cifras."""
+    try:
+        return await run_in_threadpool(lista_resurtido)
+    except Exception:
+        logger.exception("No se pudo leer Firestore para la lista de resurtido.")
+        raise HTTPException(status_code=503, detail="No pude consultar tu inventario. Intenta de nuevo en un minuto.")
+
+
+@app.post("/confirmar")
+async def confirmar_tarjeta(datos: Confirmacion) -> dict[str, str]:
+    try:
+        mensaje = await run_in_threadpool(confirmar, datos)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except Exception:
+        logger.exception("Falló la escritura en Firestore.")
+        raise HTTPException(status_code=503, detail="No pude guardar en la base de datos. Intenta de nuevo.")
+    log_asistente.info("[confirmar] %s", datos.model_dump_json())
+    return {"mensaje": mensaje}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="frontend")
