@@ -58,7 +58,21 @@ CLASS_INFO = {
     3: ("CAIDO", (0, 230, 255)),
 }
 model: Any = None
+identificador: Any = None
 logger = logging.getLogger(__name__)
+
+
+def cargar_identificador() -> None:
+    """Carga la galería de marcas (models/galeria) en segundo plano; es opcional."""
+    global identificador
+    try:
+        from ml.vision.identificar import GALERIA, Identificador
+
+        if GALERIA.is_dir():
+            identificador = Identificador()
+            logger.info("Identificador de marcas listo (%d fotos de referencia).", len(identificador.marcas))
+    except Exception:
+        logger.exception("No se pudo cargar el identificador de marcas; se omite.")
 
 
 def calculate_metrics(
@@ -133,6 +147,7 @@ async def lifespan(_: FastAPI):
     global model
     # Abre la conexión a Firestore en segundo plano para que la primera pregunta no tarde.
     threading.Thread(target=contexto_inventario, daemon=True).start()
+    threading.Thread(target=cargar_identificador, daemon=True).start()
     if ENGINE_PATH.is_file():
         import torch
 
@@ -209,11 +224,14 @@ def encode_audit_result(
     result: Any,
 ) -> dict[str, Any]:
     detections = extract_detections(result)
+    marcas = identificar_marcas(image, detections)
     annotated = image.copy()
     for detection in detections:
         class_id = detection["class_id"]
         x1, y1, x2, y2 = detection["box"]
         label, color = CLASS_INFO.get(class_id, (f"CLASE {class_id}", (255, 255, 255)))
+        if detection.get("marca"):
+            label = detection["marca"]
         cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
         cv2.putText(
             annotated,
@@ -232,7 +250,29 @@ def encode_audit_result(
 
     return {
         **detections_to_metrics(detections),
+        **marcas,
         "imagen_anotada": base64.b64encode(jpeg.tobytes()).decode("ascii"),
+    }
+
+
+def identificar_marcas(image: np.ndarray, detections: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pone "marca" en cada producto reconocido y resume cuántos hay de cada una."""
+    if identificador is None:
+        return {}
+    productos = [d for d in detections if d["class_id"] == 0]
+    recortes = []
+    for d in productos:
+        x1, y1, x2, y2 = (int(v) for v in d["box"])
+        recortes.append(image[max(0, y1):y2, max(0, x1):x2])
+    validos = [(d, r) for d, r in zip(productos, recortes) if r.size and min(r.shape[:2]) >= 12]
+    conteo: dict[str, int] = {}
+    for (d, _), (marca, _score) in zip(validos, identificador.identificar([r for _, r in validos])):
+        if marca:
+            d["marca"] = marca
+            conteo[marca] = conteo.get(marca, 0) + 1
+    return {
+        "productos_identificados": dict(sorted(conteo.items(), key=lambda kv: -kv[1])),
+        "productos_sin_identificar": len(productos) - sum(conteo.values()),
     }
 
 
@@ -385,6 +425,9 @@ async def asistente(peticion: MensajeAsistente) -> dict[str, Any]:
     except (OpenAIError, InstructorError):
         logger.exception("Falló la llamada al modelo del asistente.")
         raise HTTPException(status_code=503, detail="El asistente no está disponible. Intenta de nuevo.")
+    except Exception:
+        logger.exception("Error inesperado en /asistente.")
+        raise HTTPException(status_code=503, detail="El asistente no pudo responder en este momento. Intenta de nuevo.")
 
     try:
         salida = await run_in_threadpool(salida_para_app, respuesta)
@@ -428,12 +471,7 @@ async def confirmar_tarjeta(datos: Confirmacion) -> dict[str, str]:
 app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="frontend")
 
 
-def generate_local_certificate() -> None:
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
+def _direcciones_locales() -> set[str]:
     addresses = {"127.0.0.1"}
     try:
         addresses.update(socket.gethostbyname_ex(socket.gethostname())[2])
@@ -444,6 +482,33 @@ def generate_local_certificate() -> None:
         for address in os.environ.get("AUDIT_CERT_IPS", "").split(",")
         if address.strip()
     )
+    return addresses
+
+
+def _certificado_actualizado() -> bool:
+    """Verifica que cert.pem y key.pem existan, sigan vigentes e incluyan las IPs actuales."""
+    if not CERT_PATH.is_file() or not KEY_PATH.is_file():
+        return False
+    try:
+        from cryptography import x509
+
+        cert = x509.load_pem_x509_certificate(CERT_PATH.read_bytes())
+        if cert.not_valid_after_utc <= datetime.now(timezone.utc):
+            return False
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        cert_ips = {str(ip) for ip in san.get_values_for_type(x509.IPAddress)}
+        return _direcciones_locales() <= cert_ips
+    except Exception:
+        return False
+
+
+def generate_local_certificate() -> None:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    addresses = _direcciones_locales()
     san_entries = [x509.DNSName("localhost"), x509.DNSName(socket.gethostname())]
     san_entries.extend(x509.IPAddress(ipaddress.ip_address(address)) for address in addresses)
 
@@ -479,7 +544,7 @@ if __name__ == "__main__":
     if os.environ.get("AUDIT_LOCAL_HTTP") == "1":
         uvicorn.run(app, host="127.0.0.1", port=8000)
     else:
-        if not CERT_PATH.is_file() or not KEY_PATH.is_file():
+        if not _certificado_actualizado():
             generate_local_certificate()
         uvicorn.run(
             app,

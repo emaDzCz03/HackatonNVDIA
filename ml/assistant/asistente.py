@@ -53,9 +53,10 @@ if os.getenv("OPENROUTER_API_KEY"):
         os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         os.getenv("OPENROUTER_API_KEY"),
         os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash"),
-        timeout=15,
+        timeout=12,
         # DeepSeek razona por defecto: gasta ~750 tokens y ~16 s, y a veces no le alcanza para el JSON.
         extra_body={"reasoning": {"enabled": False}},
+        reintentos=0,
     ))
 
 

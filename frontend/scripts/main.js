@@ -160,6 +160,21 @@ const renderMetrics = (result) => {
   }
 
   updateAttention(result);
+  updateBrands(result);
+};
+const updateBrands = (result) => {
+  const brands = document.querySelector("#audit-brands");
+  if (!brands) {
+    return;
+  }
+  const found = Object.entries(result.productos_identificados ?? {});
+  const unknown = result.productos_sin_identificar ?? 0;
+  const parts = found.map(([brand, count]) => `${brand} ×${count}`);
+  if (unknown > 0 && found.length) {
+    parts.push(`${unknown} sin identificar`);
+  }
+  brands.hidden = parts.length === 0;
+  brands.textContent = parts.length ? `En el anaquel: ${parts.join(", ")}` : "";
 };
 const updateAttention = (result) => {
   const attention = document.querySelector("#audit-attention");
@@ -520,7 +535,7 @@ const chatChips = document.querySelector("#chat-chips");
 if (chatLog && chatForm && chatInput instanceof HTMLTextAreaElement && chatChips) {
   const sendButton = chatForm.querySelector(".chat-send");
   // El servidor reintenta solo si la API de NVIDIA se atora; aquí se le da margen para hacerlo.
-  const TIMEOUT_MS = 30000;
+  const TIMEOUT_MS = 45000;
   const FORMAS_PAGO = ["efectivo", "transferencia", "tarjeta", "credito"];
   const MOTIVOS = ["dañado", "caducado", "robo", "otro"];
   const ETIQUETAS = {
@@ -607,9 +622,13 @@ if (chatLog && chatForm && chatInput instanceof HTMLTextAreaElement && chatChips
         throw new Error("El servidor tardó más de lo esperado en responder. Revisa tu conexión e intenta de nuevo.");
       }
       if (error instanceof TypeError) {
-        throw new Error(window.location.protocol === "file:"
-          ? "Abriste la página como archivo. Arranca el servidor (python api_auditoria.py) y entra a https://localhost:8000/#asistente."
-          : "No pude conectar con el servidor. Revisa que esté activo y que estés en la misma red.");
+        if (window.location.protocol === "file:") {
+          throw new Error("Abriste la página como archivo. Arranca el servidor (python api_auditoria.py) y entra a https://localhost:8000/#asistente.");
+        }
+        const certHint = apiBase() !== window.location.origin
+          ? ` Si usas XAMPP, abre ${apiUrl("/")} en otra pestaña para aceptar el certificado HTTPS.`
+          : "";
+        throw new Error(`No pude conectar con el servidor en ${apiBase()}. Revisa que esté activo.${certHint}`);
       }
       throw error;
     } finally {

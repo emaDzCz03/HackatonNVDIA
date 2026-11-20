@@ -639,7 +639,8 @@ h1 span,
 }
 
 .audit-results[hidden],
-.audit-attention[hidden] {
+.audit-attention[hidden],
+.audit-brands[hidden] {
   display: none;
 }
 
@@ -703,6 +704,12 @@ h1 span,
 .audit-state.is-vacio {
   background: #fff0e8;
   color: #a34420;
+}
+
+.audit-brands {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .audit-attention {

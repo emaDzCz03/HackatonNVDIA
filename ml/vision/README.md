@@ -46,3 +46,28 @@ El detector usa cuatro clases:
 El ZIP disponible en `docs/datos` contiene 98 fotos y conteos agregados, no
 etiquetas de cajas YOLO. No tiene ejemplos registrados como dañados o caídos;
 esas clases requieren fotos anotadas para que el detector pueda aprenderlas.
+
+## Dataset desde internet + sintético (Colab A100)
+
+Sin fotos propias: el modelo nuevo usa `producto` en la clase 0 (antes
+`bottle`), así que `api_auditoria.py` funciona sin cambios.
+
+| Fuente | Qué aporta | Licencia |
+| --- | --- | --- |
+| `sintetico/generar.py` | Anaqueles generados con recortes de productos mexicanos; etiquetas exactas de `producto`, `empty_space` y `fallen_product` | Derivado de Open Food Facts (CC-BY-SA) y Roboflow |
+| Roboflow Universe (`datos_internet.py roboflow`) | Fotos reales de OXXO/tiendita (Coca-Cola, Gansito, Chokis, Takis…) y góndolas densas | CC BY 4.0 / dominio público / MIT |
+| SKU-110K (`datos_internet.py sku`) | 11 mil anaqueles densos para la clase `producto` | Uso académico |
+| `tools/recolectar_imagenes.py` | Fotos de Open Food Facts México y Wikimedia Commons | CC-BY-SA / CC |
+
+Los recortes de los datasets mexicanos con marca quedan en `galeria/<marca>/`
+para identificar el producto por similitud.
+
+En una VM de Colab (desde la raíz del proyecto en `/content/proyecto`):
+
+```bash
+pip install ultralytics roboflow "rembg[gpu]" onnxruntime-gpu
+ROBOFLOW_API_KEY=... python ml/vision/colab/pipeline.py --n-sint 8000 --horas 1.5
+```
+
+El peso final queda en `/content/datos/best.pt`; cópialo a `models/best.pt`.
+Para servir la API desde Colab con un túnel: `python ml/vision/colab/servir_api.py`.

@@ -17,7 +17,10 @@ ml/vision/raw/labels/*
 !ml/vision/raw/labels/.gitkeep
 ml/vision/dataset/
 ml/vision/runs/
+ml/vision/recolectadas/
 docs/datos/reporte_auditoria_final (1).zip
 
 serviceAccountKey.json
 __pycache__/
+models/galeria/
+models/galeria_indice.npz
