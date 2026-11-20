@@ -1,3 +1,28 @@
+const APP_CONFIG = window.APP_CONFIG ?? { API_BASE: "" };
+
+const apiBase = () => {
+  const base = (APP_CONFIG.API_BASE || "").trim().replace(/\/+$/, "");
+  if (base) {
+    return base;
+  }
+  // Sin API_BASE: mismo origen; si se abre por HTTP/XAMPP, usa el servicio IA en HTTPS :8000.
+  if (window.location.port === "8000" && window.location.protocol === "https:") {
+    return window.location.origin;
+  }
+  return `https://${window.location.hostname}:8000`;
+};
+
+const apiUrl = (path) => `${apiBase()}${path}`;
+const wsUrl = (path) => apiUrl(path).replace(/^http/i, "ws");
+
+if ("serviceWorker" in navigator && (window.isSecureContext || window.location.hostname === "localhost")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("No se pudo registrar el service worker:", error);
+    });
+  });
+}
+
 const menuToggle = document.querySelector(".menu-toggle");
 const navigation = document.querySelector("#primary-navigation");
 
@@ -32,12 +57,56 @@ const auditImage = document.querySelector("#audit-image");
 const auditPanel = document.querySelector("#audit-panel");
 const auditStatus = document.querySelector("#audit-status");
 const auditResults = document.querySelector("#audit-results");
+const startCameraButton = document.querySelector("#audit-start-camera");
+const stopCameraButton = document.querySelector("#audit-stop-camera");
+const liveContainer = document.querySelector("#audit-live-container");
+const liveVideo = document.querySelector("#audit-live-video");
+const liveCanvas = document.querySelector("#audit-live-canvas");
+const secureAccessLink = document.querySelector("#audit-secure-link");
 
 const setMetric = (selector, value) => {
   const element = document.querySelector(selector);
   if (element) {
     element.textContent = String(value);
   }
+};
+
+const renderMetrics = (result) => {
+  setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
+  setMetric("#audit-bottles", result.botellas_ok);
+  setMetric("#audit-empty", result.espacios_vacios);
+  setMetric("#audit-missing", result.faltantes_estimados);
+
+  const state = document.querySelector("#audit-state");
+  if (state) {
+    state.textContent = result.estado;
+    state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
+  }
+
+  updateAttention(result);
+};
+
+const updateAttention = (result) => {
+  const attention = document.querySelector("#audit-attention");
+  if (!attention) {
+    return;
+  }
+
+  const messages = [];
+  if (result.espacios_vacios > 0) {
+    messages.push(
+      `${result.espacios_vacios} espacio(s) vacío(s); ${result.faltantes_estimados} faltante(s) estimado(s)`,
+    );
+  }
+
+  const damaged = result.producto_danado ?? result.productos_danados ?? 0;
+  const fallen = result.producto_caido ?? result.productos_caidos ?? 0;
+  if (damaged + fallen > 0) {
+    messages.push(`${damaged} dañado(s) y ${fallen} caído(s)`);
+  }
+
+  attention.hidden = messages.length === 0;
+  attention.textContent = messages.length ? `Atención: ${messages.join("; ")}.` : "";
 };
 
 if (auditImage && auditPanel && auditStatus && auditResults) {
@@ -56,37 +125,17 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
     auditStatus.classList.remove("is-error");
 
     try {
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-      const apiUrl = `${protocol}//${window.location.hostname}:8000/auditar`;
       const body = new FormData();
       body.append("file", image);
 
-      const response = await fetch(apiUrl, { method: "POST", body });
+      const response = await fetch(apiUrl("/auditar"), { method: "POST", body });
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
         throw new Error(detail?.detail || `El servidor respondió con HTTP ${response.status}.`);
       }
 
       const result = await response.json();
-      setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
-      setMetric("#audit-bottles", result.botellas_ok);
-      setMetric("#audit-empty", result.espacios_vacios);
-      setMetric("#audit-missing", result.faltantes_estimados);
-
-      const state = document.querySelector("#audit-state");
-      if (state) {
-        state.textContent = result.estado;
-        state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
-      }
-
-      const attention = document.querySelector("#audit-attention");
-      const attentionCount = result.productos_danados + result.productos_caidos;
-      if (attention) {
-        attention.hidden = attentionCount === 0;
-        attention.textContent = attentionCount
-          ? `Atención: ${result.productos_danados} dañado(s) y ${result.productos_caidos} caído(s).`
-          : "";
-      }
+      renderMetrics(result);
 
       const annotatedImage = document.querySelector("#audit-annotated");
       if (annotatedImage) {
@@ -112,12 +161,17 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
   });
 }
 
-const startCameraButton = document.querySelector("#audit-start-camera");
-const stopCameraButton = document.querySelector("#audit-stop-camera");
-const liveContainer = document.querySelector("#audit-live-container");
-const liveVideo = document.querySelector("#audit-live-video");
-const liveCanvas = document.querySelector("#audit-live-canvas");
-const secureAccessLink = document.querySelector("#audit-secure-link");
+const showApiCertificateLink = () => {
+if (!(secureAccessLink instanceof HTMLAnchorElement)) {
+  return;
+}
+
+secureAccessLink.href = apiUrl("/");
+secureAccessLink.textContent = "Abrir servidor IA y aceptar certificado";
+secureAccessLink.target = "_blank";
+secureAccessLink.rel = "noopener";
+secureAccessLink.hidden = false;
+};
 
 if (
   startCameraButton
@@ -132,11 +186,16 @@ if (
   let auditSocket = null;
   let captureCanvas = null;
   let nextFrameTimer = null;
+  let connectionTimer = null;
 
   const stopLiveCamera = (statusMessage = null, closeSocket = true) => {
     if (nextFrameTimer !== null) {
       window.clearTimeout(nextFrameTimer);
       nextFrameTimer = null;
+    }
+    if (connectionTimer !== null) {
+      window.clearTimeout(connectionTimer);
+      connectionTimer = null;
     }
 
     const socket = auditSocket;
@@ -167,8 +226,7 @@ if (
   };
 
   if (secureAccessLink instanceof HTMLAnchorElement && !window.isSecureContext) {
-    secureAccessLink.href = `https://${window.location.hostname}:8000/`;
-    secureAccessLink.hidden = false;
+    showApiCertificateLink();
   }
 
   const syncOverlaySize = () => {
@@ -182,26 +240,7 @@ if (
   };
 
   const updateLiveMetrics = (result) => {
-    setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
-    setMetric("#audit-bottles", result.botellas_ok);
-    setMetric("#audit-empty", result.espacios_vacios);
-    setMetric("#audit-missing", result.faltantes_estimados);
-
-    const state = document.querySelector("#audit-state");
-    if (state) {
-      state.textContent = result.estado;
-      state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
-    }
-
-    const attention = document.querySelector("#audit-attention");
-    const damaged = result.producto_danado ?? result.productos_danados ?? 0;
-    const fallen = result.producto_caido ?? result.productos_caidos ?? 0;
-    if (attention) {
-      attention.hidden = damaged + fallen === 0;
-      attention.textContent = damaged + fallen
-        ? `Atención: ${damaged} dañado(s) y ${fallen} caído(s).`
-        : "";
-    }
+    renderMetrics(result);
     auditResults.hidden = false;
   };
 
@@ -322,11 +361,22 @@ if (
       liveContainer.hidden = false;
       syncOverlaySize();
 
-      const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socketUrl = `${socketProtocol}//${window.location.hostname}:8000/ws/auditar`;
+      const socketUrl = wsUrl("/ws/auditar");
       auditSocket = new WebSocket(socketUrl);
       auditSocket.binaryType = "arraybuffer";
+      auditStatus.textContent = "Conectando con el servidor de inferencia…";
+      connectionTimer = window.setTimeout(() => {
+        if (auditSocket?.readyState === WebSocket.CONNECTING) {
+          auditStatus.textContent = "El servidor de inferencia no responde en el puerto 8000. Inícialo en la PC y vuelve a intentar.";
+          auditStatus.classList.add("is-error");
+          auditSocket.close();
+        }
+      }, 10000);
       auditSocket.onopen = () => {
+        if (connectionTimer !== null) {
+          window.clearTimeout(connectionTimer);
+          connectionTimer = null;
+        }
         auditStatus.textContent = "Cámara en vivo: analizando anaquel…";
         sendNextFrame();
       };
@@ -344,8 +394,9 @@ if (
         sendNextFrame();
       };
       auditSocket.onerror = () => {
-        auditStatus.textContent = "No se pudo conectar con el WebSocket seguro de auditoría.";
+        auditStatus.textContent = "No se pudo abrir la conexión segura con la IA. Acepta el certificado del servidor y vuelve a intentar.";
         auditStatus.classList.add("is-error");
+        showApiCertificateLink();
       };
       auditSocket.onclose = (event) => {
         const wasActive = cameraStream !== null;
@@ -355,9 +406,12 @@ if (
           auditStatus.classList.add("is-error");
         } else if (wasActive && event.code !== 1000) {
           auditStatus.textContent = event.code === 1006
-            ? "No se alcanzó el servidor de auditoría. Verifica que py api_auditoria.py siga ejecutándose en HTTPS por el puerto 8000."
+            ? "Falló el WebSocket seguro. Acepta el certificado de la IA en el enlace y vuelve a intentar; si persiste, revisa la red y el firewall del puerto 8000."
             : `La conexión de auditoría terminó (${event.reason || event.code}).`;
           auditStatus.classList.add("is-error");
+          if (event.code === 1006) {
+            showApiCertificateLink();
+          }
         }
       };
       startCameraButton.hidden = true;
