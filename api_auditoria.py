@@ -1,5 +1,7 @@
 import base64
+import binascii
 import ipaddress
+import logging
 import os
 import socket
 from contextlib import asynccontextmanager
@@ -27,6 +29,7 @@ CLASS_INFO = {
     3: ("CAIDO", (0, 230, 255)),
 }
 model: Any = None
+logger = logging.getLogger(__name__)
 
 
 def calculate_metrics(
@@ -94,10 +97,12 @@ def decode_frame(data: bytes | str) -> np.ndarray | None:
 async def lifespan(_: FastAPI):
     global model
     if not MODEL_PATH.is_file():
-        raise RuntimeError(
+        logger.error(
             f"No se encontró el modelo en {MODEL_PATH}. "
-            "Coloca el archivo best.pt dentro de la carpeta models."
+            "La web estará disponible, pero la inferencia requiere models/best.pt."
         )
+        yield
+        return
 
     from ultralytics import YOLO
 
@@ -173,11 +178,19 @@ async def auditar_en_vivo(websocket: WebSocket) -> None:
             if frame_data["type"] == "websocket.disconnect":
                 break
 
-            payload = frame_data.get("bytes") or frame_data.get("text")
-            image = decode_frame(payload) if payload else None
+            payload = frame_data.get("bytes")
+            if payload is None:
+                payload = frame_data.get("text")
+            try:
+                image = decode_frame(payload) if payload else None
+            except (binascii.Error, ValueError, TypeError, cv2.error) as error:
+                logger.warning("Se descartó un fotograma inválido: %s", error)
+                await websocket.send_json({"error": "Fotograma JPEG/Base64 inválido; continúa enviando."})
+                continue
+
             if image is None:
-                await websocket.close(code=1003, reason="Envía un fotograma JPEG válido.")
-                return
+                await websocket.send_json({"error": "Fotograma JPEG/Base64 inválido; continúa enviando."})
+                continue
 
             if model is None:
                 await websocket.close(code=1011, reason="El modelo de auditoría no está disponible.")

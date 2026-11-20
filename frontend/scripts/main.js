@@ -172,8 +172,8 @@ if (
   }
 
   const syncOverlaySize = () => {
-    const width = liveVideo.clientWidth;
-    const height = liveVideo.clientHeight;
+    const width = liveVideo.videoWidth;
+    const height = liveVideo.videoHeight;
     if (liveCanvas.width !== width || liveCanvas.height !== height) {
       liveCanvas.width = width;
       liveCanvas.height = height;
@@ -288,7 +288,8 @@ if (
 
     try {
       cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
       });
       if (auditImage) {
         auditImage.disabled = true;
@@ -297,7 +298,26 @@ if (
       if (annotatedImage) {
         annotatedImage.hidden = true;
       }
+
+      const metadataReady = new Promise((resolve, reject) => {
+        if (liveVideo.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          resolve();
+          return;
+        }
+
+        const handleMetadata = () => {
+          liveVideo.removeEventListener("error", handleError);
+          resolve();
+        };
+        const handleError = () => {
+          liveVideo.removeEventListener("loadedmetadata", handleMetadata);
+          reject(new Error("No se pudieron leer los metadatos de la cámara."));
+        };
+        liveVideo.addEventListener("loadedmetadata", handleMetadata, { once: true });
+        liveVideo.addEventListener("error", handleError, { once: true });
+      });
       liveVideo.srcObject = cameraStream;
+      await metadataReady;
       await liveVideo.play();
       liveContainer.hidden = false;
       syncOverlaySize();
@@ -312,6 +332,13 @@ if (
       };
       auditSocket.onmessage = (event) => {
         const result = JSON.parse(event.data);
+        if (result.error) {
+          auditStatus.textContent = result.error;
+          auditStatus.classList.add("is-error");
+          sendNextFrame();
+          return;
+        }
+        auditStatus.classList.remove("is-error");
         updateLiveMetrics(result);
         drawDetections(result.detections);
         sendNextFrame();
@@ -323,8 +350,13 @@ if (
       auditSocket.onclose = (event) => {
         const wasActive = cameraStream !== null;
         stopLiveCamera(null, false);
-        if (wasActive && event.code !== 1000) {
-          auditStatus.textContent = `La conexión de auditoría terminó (${event.reason || event.code}).`;
+        if (wasActive && event.code === 1011) {
+          auditStatus.textContent = "El servidor está activo, pero no puede inferir: falta el modelo models/best.pt.";
+          auditStatus.classList.add("is-error");
+        } else if (wasActive && event.code !== 1000) {
+          auditStatus.textContent = event.code === 1006
+            ? "No se alcanzó el servidor de auditoría. Verifica que py api_auditoria.py siga ejecutándose en HTTPS por el puerto 8000."
+            : `La conexión de auditoría terminó (${event.reason || event.code}).`;
           auditStatus.classList.add("is-error");
         }
       };

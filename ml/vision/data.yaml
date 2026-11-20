@@ -1,0 +1,10 @@
+path: ./dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: bottle
+  1: empty_space
+  2: damaged_product
+  3: fallen_product

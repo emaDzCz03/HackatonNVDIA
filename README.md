@@ -32,9 +32,10 @@ asistente conversacional y cálculos deterministas de margen e inventario.
 
 ## Auditoría de anaqueles
 
-El servicio FastAPI espera el modelo YOLOv8 en `models/best.pt`. Copia allí
-`best.pt` antes de iniciar el servicio. El ZIP de `docs/datos` actualmente
-disponible contiene imágenes y un CSV, no los pesos del modelo.
+El servicio FastAPI usa el modelo YOLOv8 en `models/best.pt`. La web puede
+iniciarse sin el modelo, pero la inferencia responderá que no está disponible
+hasta que copies allí `best.pt`. El ZIP de `docs/datos` actualmente disponible
+contiene imágenes y un CSV, no los pesos del modelo.
 
 En Windows, instala las dependencias y levanta el servicio desde la raíz del
 repositorio. El primer arranque genera `cert.pem` y `key.pem` autofirmados,
@@ -42,9 +43,9 @@ sirve la web en HTTPS por el puerto 8000 y habilita el WebSocket seguro:
 
 ```powershell
 py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-py api_auditoria.py
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Remove-Item Env:AUDIT_LOCAL_HTTP -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe api_auditoria.py
 ```
 
 Abre `https://<IP-local-de-la-PC>:8000` en el celular. El navegador mostrará
@@ -61,7 +62,7 @@ considera un origen seguro para la cámara) sin certificado:
 
 ```powershell
 $env:AUDIT_LOCAL_HTTP = "1"
-py api_auditoria.py
+.\.venv\Scripts\python.exe api_auditoria.py
 ```
 
 Abre `http://localhost:8000`. Este modo solo escucha en `127.0.0.1`; no está
