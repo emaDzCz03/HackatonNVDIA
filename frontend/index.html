@@ -27,6 +27,7 @@
     <nav class="primary-navigation" id="primary-navigation" aria-label="Navegación principal">
       <a href="#beneficios">Beneficios</a>
       <a href="#como-funciona">Cómo funciona</a>
+      <a href="#auditoria">Auditoría</a>
       <a class="nav-cta" href="#comenzar">Conoce la app <span aria-hidden="true">↗</span></a>
     </nav>
   </header>
@@ -110,6 +111,61 @@
           <p>Consulta tus existencias actualizadas.</p>
         </li>
       </ol>
+    </section>
+
+    <section class="shelf-audit page-width" id="auditoria" aria-labelledby="audit-title">
+      <div class="audit-heading">
+        <p class="eyebrow"><span aria-hidden="true"></span> Visión con IA</p>
+        <h2 id="audit-title">Auditoría de anaqueles</h2>
+        <p>Fotografía un estante para revisar ocupación, espacios vacíos y productos que necesitan atención.</p>
+      </div>
+
+      <div class="audit-panel" id="audit-panel" aria-busy="false">
+        <div class="audit-actions">
+          <label class="button button-primary audit-capture">
+            <input id="audit-image" class="audit-file-input" type="file" accept="image/*" capture="environment"
+              aria-label="Tomar o elegir una foto del anaquel">
+            <span>Tomar foto del anaquel</span>
+            <span aria-hidden="true">↗</span>
+          </label>
+          <button id="audit-start-camera" class="button button-outline" type="button">Iniciar Cámara en Vivo</button>
+          <button id="audit-stop-camera" class="button button-stop" type="button" hidden>Detener Cámara</button>
+          <p id="audit-status" class="audit-status" role="status" aria-live="polite">
+            La foto se analizará en el servidor local de esta red.
+          </p>
+          <a id="audit-secure-link" class="audit-secure-link" hidden>Continuar en versión segura (HTTPS)</a>
+        </div>
+
+        <div id="audit-live-container" class="audit-live-container" hidden>
+          <video id="audit-live-video" autoplay playsinline muted style="width:100%; display:block;"></video>
+          <canvas id="audit-live-canvas"
+            style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+        </div>
+
+        <div class="audit-results" id="audit-results" hidden>
+          <div class="audit-metrics" aria-label="Métricas de auditoría">
+            <article class="audit-metric audit-occupancy">
+              <span>Ocupación</span>
+              <strong id="audit-occupancy">—</strong>
+              <span id="audit-state" class="audit-state"></span>
+            </article>
+            <article class="audit-metric">
+              <span>Botellas OK</span>
+              <strong id="audit-bottles">—</strong>
+            </article>
+            <article class="audit-metric">
+              <span>Espacios vacíos</span>
+              <strong id="audit-empty">—</strong>
+            </article>
+            <article class="audit-metric">
+              <span>Faltantes estimados</span>
+              <strong id="audit-missing">—</strong>
+            </article>
+          </div>
+          <p id="audit-attention" class="audit-attention" hidden></p>
+          <img id="audit-annotated" class="audit-annotated" alt="Foto del anaquel con detecciones anotadas">
+        </div>
+      </div>
     </section>
   </main>
 

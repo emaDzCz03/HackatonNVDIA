@@ -28,6 +28,45 @@ asistente conversacional y cálculos deterministas de margen e inventario.
 - `ml/assistant/`: datos sintéticos, evaluación y adaptadores del asistente.
 - `docs/`: arquitectura, datos, evaluación y casos de prueba.
 - `tests/`: pruebas automatizadas.
+- `api_auditoria.py`: microservicio local de inferencia para auditoría de anaqueles.
+
+## Auditoría de anaqueles
+
+El servicio FastAPI espera el modelo YOLOv8 en `models/best.pt`. Copia allí
+`best.pt` antes de iniciar el servicio. El ZIP de `docs/datos` actualmente
+disponible contiene imágenes y un CSV, no los pesos del modelo.
+
+En Windows, instala las dependencias y levanta el servicio desde la raíz del
+repositorio. El primer arranque genera `cert.pem` y `key.pem` autofirmados,
+sirve la web en HTTPS por el puerto 8000 y habilita el WebSocket seguro:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+py api_auditoria.py
+```
+
+Abre `https://<IP-local-de-la-PC>:8000` en el celular. El navegador mostrará
+una advertencia porque el certificado es autofirmado; acepta el certificado
+para habilitar cámara y WebSocket seguro. El celular y la PC deben estar en la
+misma red, y el firewall debe permitir el puerto 8000. Para agregar una IP
+adicional al certificado, define `AUDIT_CERT_IPS` con una lista separada por
+comas antes de iniciar el servicio.
+La página de XAMPP servida como `http://<IP-local>/...` no puede activar la
+cámara en vivo; abre la dirección HTTPS del servicio en el puerto 8000.
+
+Para pruebas solo en la PC, se puede usar HTTP en `localhost` (que el navegador
+considera un origen seguro para la cámara) sin certificado:
+
+```powershell
+$env:AUDIT_LOCAL_HTTP = "1"
+py api_auditoria.py
+```
+
+Abre `http://localhost:8000`. Este modo solo escucha en `127.0.0.1`; no está
+disponible desde el celular ni desde otros equipos. Cierra la terminal o ejecuta
+`Remove-Item Env:AUDIT_LOCAL_HTTP` para volver al modo HTTPS de red.
 
 ## Separación obligatoria de datos
 

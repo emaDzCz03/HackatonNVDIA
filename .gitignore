@@ -2,9 +2,18 @@ node_modules/
 .firebase/
 .env
 .env.*
+cert.pem
+key.pem
 firebase-debug.log
 firestore-debug.log
 coverage/
 dist/
 ml/vision/data/raw/*
 !ml/vision/data/raw/.gitkeep
+ml/vision/raw/images/*
+!ml/vision/raw/images/.gitkeep
+ml/vision/raw/labels/*
+!ml/vision/raw/labels/.gitkeep
+ml/vision/dataset/
+ml/vision/runs/
+docs/datos/reporte_auditoria_final (1).zip

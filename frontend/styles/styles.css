@@ -184,7 +184,12 @@ h1 span,
   border-radius: 7px;
   font-size: 13px;
   font-weight: 650;
+  font-family: inherit;
   transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.button[hidden] {
+  display: none;
 }
 
 .button:hover {
@@ -198,6 +203,27 @@ h1 span,
 
 .button-primary:hover {
   background: var(--green-dark);
+}
+
+.button-outline,
+.button-stop {
+  border: 1px solid #d5dfd5;
+  background: var(--white);
+  color: var(--green-dark);
+  cursor: pointer;
+}
+
+.button-outline:hover {
+  background: var(--green-soft);
+}
+
+.button-stop {
+  border-color: #f1d5d0;
+  color: #a5342e;
+}
+
+.button-stop:hover {
+  background: #fff0ed;
 }
 
 .action-note {
@@ -466,6 +492,208 @@ h1 span,
   font-size: 11px;
 }
 
+.shelf-audit {
+  padding-block: 0 90px;
+}
+
+.audit-heading {
+  max-width: 600px;
+  margin-bottom: 27px;
+}
+
+.audit-heading .eyebrow {
+  margin-bottom: 15px;
+}
+
+.audit-heading h2 {
+  margin-bottom: 10px;
+  font-size: clamp(30px, 3.8vw, 43px);
+  font-weight: 620;
+  letter-spacing: -2.1px;
+}
+
+.audit-heading > p:last-child {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.audit-panel {
+  padding: clamp(18px, 4vw, 32px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+  box-shadow: 0 14px 40px rgb(34 55 38 / 5%);
+}
+
+.audit-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.audit-capture {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.audit-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.audit-file-input:disabled {
+  cursor: wait;
+}
+
+.audit-capture:focus-within {
+  outline: 3px solid #8bb797;
+  outline-offset: 4px;
+}
+
+.audit-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.audit-status.is-error {
+  color: #a5342e;
+}
+
+.audit-secure-link {
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.audit-secure-link[hidden] {
+  display: none;
+}
+
+.audit-live-container {
+  position: relative;
+  width: 100%;
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111;
+}
+
+.audit-live-container[hidden] {
+  display: none;
+}
+
+.audit-live-container video {
+  height: auto;
+}
+
+.audit-live-container canvas {
+  z-index: 1;
+}
+
+.audit-panel[aria-busy="true"] .audit-capture {
+  opacity: 0.65;
+}
+
+.audit-results {
+  margin-top: 25px;
+}
+
+.audit-results[hidden],
+.audit-attention[hidden] {
+  display: none;
+}
+
+.audit-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.audit-metric {
+  display: flex;
+  min-height: 100px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.audit-metric > span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.audit-metric > strong {
+  font-size: 25px;
+  letter-spacing: -1px;
+}
+
+.audit-occupancy > strong {
+  color: var(--green);
+  font-size: 31px;
+}
+
+.audit-state {
+  width: fit-content;
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: #eef1ed;
+  color: #536057;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+}
+
+.audit-state.is-optimo {
+  background: #e8f1e9;
+  color: #286b42;
+}
+
+.audit-state.is-resurtir,
+.audit-state.is-vacio {
+  background: #fff0e8;
+  color: #a34420;
+}
+
+.audit-attention {
+  margin: 0 0 14px;
+  color: #a34420;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.audit-annotated {
+  display: block;
+  width: 100%;
+  max-height: 650px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f7f8f6;
+}
+
+.audit-annotated[hidden] {
+  display: none;
+}
+
 :focus-visible {
   outline: 3px solid #8bb797;
   outline-offset: 4px;
@@ -584,6 +812,20 @@ h1 span,
     grid-template-columns: 1fr;
     gap: 28px;
     padding-block: 68px;
+  }
+
+  .shelf-audit {
+    padding-bottom: 68px;
+  }
+
+  .audit-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .audit-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
