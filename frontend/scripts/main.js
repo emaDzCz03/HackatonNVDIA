@@ -1,3 +1,28 @@
+const APP_CONFIG = window.APP_CONFIG ?? { API_BASE: "" };
+
+const apiBase = () => {
+  const base = (APP_CONFIG.API_BASE || "").trim().replace(/\/+$/, "");
+  if (base) {
+    return base;
+  }
+  // Sin API_BASE: mismo origen; si se abre por HTTP/XAMPP, usa el servicio IA en HTTPS :8000.
+  if (window.location.port === "8000" && window.location.protocol === "https:") {
+    return window.location.origin;
+  }
+  return `https://${window.location.hostname}:8000`;
+};
+
+const apiUrl = (path) => `${apiBase()}${path}`;
+const wsUrl = (path) => apiUrl(path).replace(/^http/i, "ws");
+
+if ("serviceWorker" in navigator && (window.isSecureContext || window.location.hostname === "localhost")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("No se pudo registrar el service worker:", error);
+    });
+  });
+}
+
 const menuToggle = document.querySelector(".menu-toggle");
 const navigation = document.querySelector("#primary-navigation");
 
@@ -32,6 +57,12 @@ const auditImage = document.querySelector("#audit-image");
 const auditPanel = document.querySelector("#audit-panel");
 const auditStatus = document.querySelector("#audit-status");
 const auditResults = document.querySelector("#audit-results");
+const startCameraButton = document.querySelector("#audit-start-camera");
+const stopCameraButton = document.querySelector("#audit-stop-camera");
+const liveContainer = document.querySelector("#audit-live-container");
+const liveVideo = document.querySelector("#audit-live-video");
+const liveCanvas = document.querySelector("#audit-live-canvas");
+const secureAccessLink = document.querySelector("#audit-secure-link");
 
 const setMetric = (selector, value) => {
   const element = document.querySelector(selector);
@@ -40,6 +71,20 @@ const setMetric = (selector, value) => {
   }
 };
 
+const renderMetrics = (result) => {
+  setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
+  setMetric("#audit-bottles", result.botellas_ok);
+  setMetric("#audit-empty", result.espacios_vacios);
+  setMetric("#audit-missing", result.faltantes_estimados);
+
+  const state = document.querySelector("#audit-state");
+  if (state) {
+    state.textContent = result.estado;
+    state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
+  }
+
+  updateAttention(result);
+};
 const updateAttention = (result) => {
   const attention = document.querySelector("#audit-attention");
   if (!attention) {
@@ -79,29 +124,17 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
     auditStatus.classList.remove("is-error");
 
     try {
-      const apiUrl = `https://${window.location.hostname}:8000/auditar`;
       const body = new FormData();
       body.append("file", image);
 
-      const response = await fetch(apiUrl, { method: "POST", body });
+      const response = await fetch(apiUrl("/auditar"), { method: "POST", body });
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
         throw new Error(detail?.detail || `El servidor respondió con HTTP ${response.status}.`);
       }
 
       const result = await response.json();
-      setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
-      setMetric("#audit-bottles", result.botellas_ok);
-      setMetric("#audit-empty", result.espacios_vacios);
-      setMetric("#audit-missing", result.faltantes_estimados);
-
-      const state = document.querySelector("#audit-state");
-      if (state) {
-        state.textContent = result.estado;
-        state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
-      }
-
-      updateAttention(result);
+      renderMetrics(result);
 
       const annotatedImage = document.querySelector("#audit-annotated");
       if (annotatedImage) {
@@ -127,23 +160,16 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
   });
 }
 
-const startCameraButton = document.querySelector("#audit-start-camera");
-const stopCameraButton = document.querySelector("#audit-stop-camera");
-const liveContainer = document.querySelector("#audit-live-container");
-const liveVideo = document.querySelector("#audit-live-video");
-const liveCanvas = document.querySelector("#audit-live-canvas");
-const secureAccessLink = document.querySelector("#audit-secure-link");
-
 const showApiCertificateLink = () => {
-if (!(secureAccessLink instanceof HTMLAnchorElement)) {
-  return;
-}
+  if (!(secureAccessLink instanceof HTMLAnchorElement)) {
+    return;
+  }
 
-secureAccessLink.href = `https://${window.location.hostname}:8000/`;
-secureAccessLink.textContent = "Abrir servidor IA y aceptar certificado";
-secureAccessLink.target = "_blank";
-secureAccessLink.rel = "noopener";
-secureAccessLink.hidden = false;
+  secureAccessLink.href = apiUrl("/");
+  secureAccessLink.textContent = "Abrir servidor IA y aceptar certificado";
+  secureAccessLink.target = "_blank";
+  secureAccessLink.rel = "noopener";
+  secureAccessLink.hidden = false;
 };
 
 if (
@@ -213,18 +239,7 @@ if (
   };
 
   const updateLiveMetrics = (result) => {
-    setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
-    setMetric("#audit-bottles", result.botellas_ok);
-    setMetric("#audit-empty", result.espacios_vacios);
-    setMetric("#audit-missing", result.faltantes_estimados);
-
-    const state = document.querySelector("#audit-state");
-    if (state) {
-      state.textContent = result.estado;
-      state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
-    }
-
-    updateAttention(result);
+    renderMetrics(result);
     auditResults.hidden = false;
   };
 
@@ -345,7 +360,7 @@ if (
       liveContainer.hidden = false;
       syncOverlaySize();
 
-      const socketUrl = `wss://${window.location.hostname}:8000/ws/auditar`;
+      const socketUrl = wsUrl("/ws/auditar");
       auditSocket = new WebSocket(socketUrl);
       auditSocket.binaryType = "arraybuffer";
       auditStatus.textContent = "Conectando con el servidor de inferencia…";
