@@ -7,8 +7,8 @@
   <meta name="description" content="Recibe mercancía, actualiza existencias y conoce tus costos desde un solo lugar.">
   <meta name="theme-color" content="#2d754d">
   <title>Inventario Claro | Control sencillo para tu negocio</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="stylesheet" href="styles/styles.css">
   <script src="scripts/config.js" defer></script>
   <script src="scripts/main.js" defer></script>
@@ -48,6 +48,11 @@
           <a class="button button-primary" href="#como-funciona">
             Descubre cómo funciona <span aria-hidden="true">→</span>
           </a>
+          <div class="install-app-option">
+            <button id="install-app" class="button button-outline" type="button">Instalar app</button>
+            <p id="install-status" class="install-status" role="status" aria-live="polite" hidden></p>
+            <a id="install-secure-link" class="install-secure-link" hidden>Abrir versión HTTPS para instalar</a>
+          </div>
           <p class="action-note"><span aria-hidden="true">✓</span> Hecho para negocios como el tuyo</p>
         </div>
         <div class="trust-note">

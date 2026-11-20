@@ -69,6 +69,14 @@ Abre `http://localhost:8000`. Este modo solo escucha en `127.0.0.1`; no está
 disponible desde el celular ni desde otros equipos. Cierra la terminal o ejecuta
 `Remove-Item Env:AUDIT_LOCAL_HTTP` para volver al modo HTTPS de red.
 
+## Instalar la web como aplicación
+
+En un navegador compatible, pulsa **Instalar app** en la portada y confirma la
+instalación. En iPhone o iPad, abre la web en Safari, pulsa **Compartir** y elige
+**Añadir a pantalla de inicio**. La instalación requiere HTTPS, excepto en
+`localhost`. El manifiesto y el service worker usan rutas relativas para
+funcionar tanto desde la raíz como desde la carpeta `frontend/` de XAMPP.
+
 ## Separación obligatoria de datos
 
 Las fotos de visión deben dividirse por escena o sesión. No dividir archivos casi

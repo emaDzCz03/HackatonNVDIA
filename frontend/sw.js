@@ -1,17 +1,17 @@
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `anaqueles-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
-  "/",
-  "/index.html",
-  "/styles/styles.css",
-  "/scripts/main.js",
-  "/scripts/config.js",
-  "/manifest.webmanifest",
-  "/assets/icons/icon-192.png",
-  "/assets/icons/icon-512.png",
-  "/assets/icons/icon-512-maskable.png",
-];
+  "./",
+  "index.html",
+  "styles/styles.css",
+  "scripts/main.js",
+  "scripts/config.js",
+  "manifest.webmanifest",
+  "assets/icons/icon-192.png",
+  "assets/icons/icon-512.png",
+  "assets/icons/icon-512-maskable.png",
+].map((path) => new URL(path, self.registration.scope).href);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)));
@@ -40,7 +40,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/auditar" || url.pathname === "/ws/auditar") {
     return;
   }
-  if (!PRECACHE_URLS.includes(url.pathname)) {
+  if (!PRECACHE_URLS.includes(url.href)) {
     return;
   }
 

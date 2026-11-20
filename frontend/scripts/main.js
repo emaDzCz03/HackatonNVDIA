@@ -17,10 +17,77 @@ const wsUrl = (path) => apiUrl(path).replace(/^http/i, "ws");
 
 if ("serviceWorker" in navigator && (window.isSecureContext || window.location.hostname === "localhost")) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
+    const appBase = new URL(".", window.location.href);
+    navigator.serviceWorker.register(new URL("sw.js", appBase)).catch((error) => {
       console.warn("No se pudo registrar el service worker:", error);
     });
   });
+}
+
+const installButton = document.querySelector("#install-app");
+const installStatus = document.querySelector("#install-status");
+const installSecureLink = document.querySelector("#install-secure-link");
+let deferredInstallPrompt = null;
+
+if (installButton && installStatus) {
+  const isInstalled = window.matchMedia("(display-mode: standalone)").matches
+    || navigator.standalone === true;
+
+  if (isInstalled) {
+    installButton.hidden = true;
+    installStatus.hidden = false;
+    installStatus.textContent = "Inventario Claro ya está instalada en este dispositivo.";
+  } else {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      installButton.hidden = true;
+      installStatus.hidden = false;
+      installStatus.textContent = "La app quedó instalada. La encontrarás en la pantalla de inicio.";
+    });
+
+    installButton.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) {
+        if (!window.isSecureContext) {
+          installStatus.textContent = "La instalación requiere HTTPS. Abre la versión segura de esta web y vuelve a intentarlo.";
+          installStatus.hidden = false;
+          if (installSecureLink instanceof HTMLAnchorElement) {
+            installSecureLink.href = apiUrl("/");
+            installSecureLink.target = "_blank";
+            installSecureLink.rel = "noopener";
+            installSecureLink.hidden = false;
+          }
+          return;
+        }
+
+        const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent)
+          || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        installStatus.textContent = isAppleMobile
+          ? "En Safari, toca Compartir y elige “Añadir a pantalla de inicio”."
+          : "Abre el menú del navegador y elige “Instalar app” o “Añadir a pantalla de inicio”.";
+        installStatus.hidden = false;
+        return;
+      }
+
+      const installPrompt = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        installStatus.textContent = choice.outcome === "accepted"
+          ? "La instalación se inició."
+          : "Instalación cancelada. Puedes intentarlo desde el menú del navegador.";
+        installStatus.hidden = false;
+      } catch (error) {
+        installStatus.textContent = `No se pudo iniciar la instalación: ${error.message}`;
+        installStatus.hidden = false;
+      }
+    });
+  }
 }
 
 const menuToggle = document.querySelector(".menu-toggle");

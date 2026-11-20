@@ -241,6 +241,32 @@ h1 span,
   font-weight: 700;
 }
 
+.install-app-option {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.install-status {
+  max-width: 300px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.install-secure-link {
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.install-secure-link[hidden] {
+  display: none;
+}
+
 .trust-note {
   display: flex;
   max-width: 360px;
