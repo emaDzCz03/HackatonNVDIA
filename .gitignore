@@ -20,3 +20,4 @@ ml/vision/runs/
 docs/datos/reporte_auditoria_final (1).zip
 
 serviceAccountKey.json
+__pycache__/

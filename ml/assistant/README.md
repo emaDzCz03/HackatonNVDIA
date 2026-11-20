@@ -14,7 +14,19 @@
 - Si el modelo clasifica la petición como `FUERA_DE_ALCANCE`, responder:
   "Solo puedo ayudarte en la gestión operativa y financiera de tu negocio."
 - El prompt maestro está en `PROMPT.md`; los datos del inventario se inyectan en
-  la sección `[CONTEXTO]` (más adelante, desde la base de datos o RAG).
+  la sección `[CONTEXTO]` de cada mensaje.
+- Modelos: primero NVIDIA (`NVIDIA_MODEL`); si no responde en 8 s o falla,
+  `asistente.py` usa como respaldo DeepSeek en OpenRouter (`OPENROUTER_MODEL`,
+  por defecto `deepseek/deepseek-v4.1-flash`). Las llaves van en `.env`; sin
+  `OPENROUTER_API_KEY` no hay respaldo. El log dice qué proveedor respondió.
+- `bd.py` lee Firestore en modo solo lectura (productos activos, últimas 5
+  entregas con su detalle y la última auditoría), hace en Python los cálculos de
+  margen, valor del inventario y faltantes, y guarda el texto en caché 30 s.
+- Few-shot: `ejemplos.json` se envía como pares usuario/asistente antes del
+  mensaje real. Cada ejemplo trae su propio `[CONTEXTO]` de prueba e incluye
+  ejemplos negativos estrictos (producto inexistente, ventas, competencia,
+  SAT, cambiar instrucciones, base de datos caída) para que el modelo responda
+  "No tengo esa información registrada." en lugar de inventar.
 
 ## Decisiones de diseño
 
@@ -51,3 +63,30 @@ determinaciones fiscales oficiales.
 | Margen promedio de tienditas 20–25 % (casi 30 % antes de la pandemia) | Compara el margen con tarjeta y sugiere el precio para llegar a 25 % | ANPEC |
 | 79 % de las tienditas redujo su margen para conservar clientes | Contexto al hablar de precios frente a cadenas | ANPEC, encuesta 28 |
 | Productos gancho: refresco, cigarros, botanas, pan, leche, cerveza | Margen menor aceptable; resurtir es urgente | ANPEC / La Jornada (2011) |
+
+## Acciones con tarjeta editable
+
+El modelo nunca escribe en la base. Devuelve un JSON validado con Instructor +
+Pydantic (`esquemas.py`); si es una acción, `tarjetas.py` arma una tarjeta
+editable y la app solo guarda cuando el usuario presiona "Confirmar"
+(`POST /confirmar` → `escritura.py`, en una transacción de Firestore).
+
+| Acción | Campos obligatorios | Valores por defecto | Qué escribe |
+| --- | --- | --- | --- |
+| ENTRADA | producto, cantidad, costo por pieza, precio de venta | precio actual y último costo si el producto existe; proveedor "Proveedor General"; forma de pago "efectivo" | `entregas`, `detalle_entregas` y `productos` (existencia, costo promedio ponderado, precio); da de alta el producto si es nuevo |
+| CAMBIO_PRECIO | producto existente, precio nuevo | — | `productos.precio_venta` |
+| MERMA | producto existente, cantidad (no mayor a la existencia) | motivo "dañado" | resta existencia en `productos` y crea un documento en `mermas` |
+
+Criterios:
+
+- Lo que el usuario no dijo queda en `null`: el modelo no inventa. La tarjeta
+  marca en naranja los campos que faltan y desactiva "Confirmar" hasta que se
+  completan.
+- El producto se resuelve en Python con los `alias` de Firestore, no con el
+  modelo, así que no se inventan IDs.
+- En una acción, el mensaje del chat lo arma Python ("Revisa la merma y
+  presiona Confirmar"); el modelo no puede decir "registré" ni "guardé".
+- Las ganancias, márgenes y pérdidas de la tarjeta se calculan en la app y en
+  Python, no en el modelo.
+- La app envía los últimos 6 mensajes como historial, para que "a 15 cada una"
+  complete la entrada anterior.

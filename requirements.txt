@@ -9,3 +9,4 @@ cryptography
 openai
 python-dotenv
 firebase-admin
+instructor
