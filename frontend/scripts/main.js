@@ -40,6 +40,29 @@ const setMetric = (selector, value) => {
   }
 };
 
+const updateAttention = (result) => {
+  const attention = document.querySelector("#audit-attention");
+  if (!attention) {
+    return;
+  }
+
+  const messages = [];
+  if (result.espacios_vacios > 0) {
+    messages.push(
+      `${result.espacios_vacios} espacio(s) vacío(s); ${result.faltantes_estimados} faltante(s) estimado(s)`,
+    );
+  }
+
+  const damaged = result.producto_danado ?? result.productos_danados ?? 0;
+  const fallen = result.producto_caido ?? result.productos_caidos ?? 0;
+  if (damaged + fallen > 0) {
+    messages.push(`${damaged} dañado(s) y ${fallen} caído(s)`);
+  }
+
+  attention.hidden = messages.length === 0;
+  attention.textContent = messages.length ? `Atención: ${messages.join("; ")}.` : "";
+};
+
 if (auditImage && auditPanel && auditStatus && auditResults) {
   auditImage.addEventListener("change", async () => {
     const image = auditImage.files?.[0];
@@ -56,8 +79,7 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
     auditStatus.classList.remove("is-error");
 
     try {
-      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-      const apiUrl = `${protocol}//${window.location.hostname}:8000/auditar`;
+      const apiUrl = `https://${window.location.hostname}:8000/auditar`;
       const body = new FormData();
       body.append("file", image);
 
@@ -79,14 +101,7 @@ if (auditImage && auditPanel && auditStatus && auditResults) {
         state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
       }
 
-      const attention = document.querySelector("#audit-attention");
-      const attentionCount = result.productos_danados + result.productos_caidos;
-      if (attention) {
-        attention.hidden = attentionCount === 0;
-        attention.textContent = attentionCount
-          ? `Atención: ${result.productos_danados} dañado(s) y ${result.productos_caidos} caído(s).`
-          : "";
-      }
+      updateAttention(result);
 
       const annotatedImage = document.querySelector("#audit-annotated");
       if (annotatedImage) {
@@ -119,6 +134,18 @@ const liveVideo = document.querySelector("#audit-live-video");
 const liveCanvas = document.querySelector("#audit-live-canvas");
 const secureAccessLink = document.querySelector("#audit-secure-link");
 
+const showApiCertificateLink = () => {
+if (!(secureAccessLink instanceof HTMLAnchorElement)) {
+  return;
+}
+
+secureAccessLink.href = `https://${window.location.hostname}:8000/`;
+secureAccessLink.textContent = "Abrir servidor IA y aceptar certificado";
+secureAccessLink.target = "_blank";
+secureAccessLink.rel = "noopener";
+secureAccessLink.hidden = false;
+};
+
 if (
   startCameraButton
   && stopCameraButton
@@ -132,11 +159,16 @@ if (
   let auditSocket = null;
   let captureCanvas = null;
   let nextFrameTimer = null;
+  let connectionTimer = null;
 
   const stopLiveCamera = (statusMessage = null, closeSocket = true) => {
     if (nextFrameTimer !== null) {
       window.clearTimeout(nextFrameTimer);
       nextFrameTimer = null;
+    }
+    if (connectionTimer !== null) {
+      window.clearTimeout(connectionTimer);
+      connectionTimer = null;
     }
 
     const socket = auditSocket;
@@ -167,8 +199,7 @@ if (
   };
 
   if (secureAccessLink instanceof HTMLAnchorElement && !window.isSecureContext) {
-    secureAccessLink.href = `https://${window.location.hostname}:8000/`;
-    secureAccessLink.hidden = false;
+    showApiCertificateLink();
   }
 
   const syncOverlaySize = () => {
@@ -193,15 +224,7 @@ if (
       state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
     }
 
-    const attention = document.querySelector("#audit-attention");
-    const damaged = result.producto_danado ?? result.productos_danados ?? 0;
-    const fallen = result.producto_caido ?? result.productos_caidos ?? 0;
-    if (attention) {
-      attention.hidden = damaged + fallen === 0;
-      attention.textContent = damaged + fallen
-        ? `Atención: ${damaged} dañado(s) y ${fallen} caído(s).`
-        : "";
-    }
+    updateAttention(result);
     auditResults.hidden = false;
   };
 
@@ -322,11 +345,22 @@ if (
       liveContainer.hidden = false;
       syncOverlaySize();
 
-      const socketProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socketUrl = `${socketProtocol}//${window.location.hostname}:8000/ws/auditar`;
+      const socketUrl = `wss://${window.location.hostname}:8000/ws/auditar`;
       auditSocket = new WebSocket(socketUrl);
       auditSocket.binaryType = "arraybuffer";
+      auditStatus.textContent = "Conectando con el servidor de inferencia…";
+      connectionTimer = window.setTimeout(() => {
+        if (auditSocket?.readyState === WebSocket.CONNECTING) {
+          auditStatus.textContent = "El servidor de inferencia no responde en el puerto 8000. Inícialo en la PC y vuelve a intentar.";
+          auditStatus.classList.add("is-error");
+          auditSocket.close();
+        }
+      }, 10000);
       auditSocket.onopen = () => {
+        if (connectionTimer !== null) {
+          window.clearTimeout(connectionTimer);
+          connectionTimer = null;
+        }
         auditStatus.textContent = "Cámara en vivo: analizando anaquel…";
         sendNextFrame();
       };
@@ -344,8 +378,9 @@ if (
         sendNextFrame();
       };
       auditSocket.onerror = () => {
-        auditStatus.textContent = "No se pudo conectar con el WebSocket seguro de auditoría.";
+        auditStatus.textContent = "No se pudo abrir la conexión segura con la IA. Acepta el certificado del servidor y vuelve a intentar.";
         auditStatus.classList.add("is-error");
+        showApiCertificateLink();
       };
       auditSocket.onclose = (event) => {
         const wasActive = cameraStream !== null;
@@ -355,9 +390,12 @@ if (
           auditStatus.classList.add("is-error");
         } else if (wasActive && event.code !== 1000) {
           auditStatus.textContent = event.code === 1006
-            ? "No se alcanzó el servidor de auditoría. Verifica que py api_auditoria.py siga ejecutándose en HTTPS por el puerto 8000."
+            ? "Falló el WebSocket seguro. Acepta el certificado de la IA en el enlace y vuelve a intentar; si persiste, revisa la red y el firewall del puerto 8000."
             : `La conexión de auditoría terminó (${event.reason || event.code}).`;
           auditStatus.classList.add("is-error");
+          if (event.code === 1006) {
+            showApiCertificateLink();
+          }
         }
       };
       startCameraButton.hidden = true;

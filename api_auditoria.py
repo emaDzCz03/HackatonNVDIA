@@ -35,11 +35,11 @@ logger = logging.getLogger(__name__)
 def calculate_metrics(
     detections: list[tuple[int, float, float, float, float]],
 ) -> dict[str, int | float | str]:
-    botellas_ok = sum(class_id == 0 for class_id, *_ in detections)
+    botellas_ok = sum(int(class_id == 0) for class_id, *_ in detections)
     espacios = [item for item in detections if item[0] == 1]
     espacios_vacios = len(espacios)
-    productos_danados = sum(class_id == 2 for class_id, *_ in detections)
-    productos_caidos = sum(class_id == 3 for class_id, *_ in detections)
+    productos_danados = sum(int(class_id == 2) for class_id, *_ in detections)
+    productos_caidos = sum(int(class_id == 3) for class_id, *_ in detections)
 
     bottle_widths = [x2 - x1 for class_id, x1, _, x2, _ in detections if class_id == 0]
     median_bottle_width = median(bottle_widths) if bottle_widths else None

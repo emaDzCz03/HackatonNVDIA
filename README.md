@@ -42,7 +42,7 @@ repositorio. El primer arranque genera `cert.pem` y `key.pem` autofirmados,
 sirve la web en HTTPS por el puerto 8000 y habilita el WebSocket seguro:
 
 ```powershell
-py -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 Remove-Item Env:AUDIT_LOCAL_HTTP -ErrorAction SilentlyContinue
 .\.venv\Scripts\python.exe api_auditoria.py
