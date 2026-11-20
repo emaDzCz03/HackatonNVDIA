@@ -15,7 +15,11 @@ import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from openai import OpenAIError
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+
+from ml.assistant.asistente import responder
 
 
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "best.pt"
@@ -240,6 +244,20 @@ async def auditar_en_vivo(websocket: WebSocket) -> None:
             })
     except WebSocketDisconnect:
         pass
+
+
+class MensajeAsistente(BaseModel):
+    mensaje: str = Field(min_length=1, max_length=1000)
+
+
+@app.post("/asistente")
+async def asistente(peticion: MensajeAsistente) -> dict[str, str]:
+    try:
+        respuesta = await run_in_threadpool(responder, peticion.mensaje)
+    except OpenAIError:
+        logger.exception("Falló la llamada al modelo del asistente.")
+        raise HTTPException(status_code=503, detail="El asistente no está disponible.")
+    return {"respuesta": respuesta}
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_PATH, html=True), name="frontend")
