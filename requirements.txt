@@ -8,3 +8,4 @@ websockets
 cryptography
 openai
 python-dotenv
+firebase-admin
