@@ -139,7 +139,10 @@ const setMetric = (selector, value) => {
 };
 
 const renderMetrics = (result) => {
-  setMetric("#audit-occupancy", `${result.ocupacion_porcentaje}%`);
+  const percentage = result.porcentaje_ocupacion ?? result.ocupacion_porcentaje;
+  const occupancyDisplay = result.ocupacion_display
+    ?? (percentage == null ? "N/D — REVISAR" : `${percentage}%`);
+  setMetric("#audit-occupancy", occupancyDisplay);
   setMetric("#audit-bottles", result.botellas_ok);
   setMetric("#audit-empty", result.espacios_vacios);
   setMetric("#audit-missing", result.faltantes_estimados);
@@ -147,7 +150,13 @@ const renderMetrics = (result) => {
   const state = document.querySelector("#audit-state");
   if (state) {
     state.textContent = result.estado;
-    state.className = `audit-state ${result.estado === "OPTIMO" ? "is-optimo" : result.estado === "RESURTIR" ? "is-resurtir" : "is-vacio"}`;
+    const stateClass = {
+      OPTIMO: "is-optimo",
+      RESURTIR: "is-resurtir",
+      REVISAR: "is-revisar",
+      "ESTANTE VACIO": "is-vacio",
+    }[result.estado] || "";
+    state.className = `audit-state ${stateClass}`;
   }
 
   updateAttention(result);
@@ -159,7 +168,9 @@ const updateAttention = (result) => {
   }
 
   const messages = [];
-  if (result.espacios_vacios > 0) {
+  if (result.advertencia) {
+    messages.push(result.advertencia);
+  } else if (result.espacios_vacios > 0) {
     messages.push(
       `${result.espacios_vacios} espacio(s) vacío(s); ${result.faltantes_estimados} faltante(s) estimado(s)`,
     );
@@ -171,8 +182,9 @@ const updateAttention = (result) => {
     messages.push(`${damaged} dañado(s) y ${fallen} caído(s)`);
   }
 
+  attention.classList.toggle("is-revisar", result.estado === "REVISAR");
   attention.hidden = messages.length === 0;
-  attention.textContent = messages.length ? `Atención: ${messages.join("; ")}.` : "";
+  attention.textContent = messages.length ? `Atención: ${messages.join("; ")}` : "";
 };
 
 if (auditImage && auditPanel && auditStatus && auditResults) {
@@ -468,7 +480,7 @@ if (
         const wasActive = cameraStream !== null;
         stopLiveCamera(null, false);
         if (wasActive && event.code === 1011) {
-          auditStatus.textContent = "El servidor está activo, pero no puede inferir: falta el modelo models/best.pt.";
+          auditStatus.textContent = "El servidor está activo, pero no puede inferir: falta models/best.pt o models/best_v3.pt.";
           auditStatus.classList.add("is-error");
         } else if (wasActive && event.code !== 1000) {
           auditStatus.textContent = event.code === 1006

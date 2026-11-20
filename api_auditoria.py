@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, List
 
 import cv2
 import numpy as np
@@ -18,10 +18,28 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 
-MODEL_PATH = Path(__file__).resolve().parent / "models" / "best.pt"
+PROJECT_PATH = Path(__file__).resolve().parent
+MODELS_PATH = PROJECT_PATH / "models"
+MODEL_PATH = MODELS_PATH / "best.pt"
+MODEL_FALLBACK_PATH = MODELS_PATH / "best_v3.pt"
+ENGINE_PATH = MODELS_PATH / "best.engine"
 FRONTEND_PATH = Path(__file__).resolve().parent / "frontend"
 CERT_PATH = Path(__file__).resolve().parent / "cert.pem"
 KEY_PATH = Path(__file__).resolve().parent / "key.pem"
+PREDICT_CONFIDENCE = 0.20
+PREDICT_IOU = 0.45
+PREDICT_IMAGE_SIZE = 640
+OCCUPANCY_THRESHOLD = 80
+UMBRAL_POR_CLASE = {
+    0: 0.35,
+    1: 0.20,
+    2: 0.30,
+    3: 0.30,
+}
+NO_EMPTY_WARNING = (
+    "No se detectaron espacios vacíos; la ocupación no pudo estimarse con certeza. "
+    "Apunta directamente al anaquel real, llena el encuadre y enfoca."
+)
 CLASS_INFO = {
     0: ("OK", (0, 220, 0)),
     1: ("VACIO", (0, 0, 255)),
@@ -34,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 def calculate_metrics(
     detections: list[tuple[int, float, float, float, float]],
-) -> dict[str, int | float | str]:
+) -> dict[str, int | float | str | None]:
     botellas_ok = sum(int(class_id == 0) for class_id, *_ in detections)
     espacios = [item for item in detections if item[0] == 1]
     espacios_vacios = len(espacios)
@@ -51,30 +69,36 @@ def calculate_metrics(
     else:
         faltantes_estimados = espacios_vacios
 
-    total_estimado = botellas_ok + faltantes_estimados
-    ocupacion_porcentaje = (
-        round((botellas_ok / total_estimado) * 100, 1) if botellas_ok else 0
-    )
-
-    if botellas_ok == 0:
-        estado = "ESTANTE VACIO"
-    elif (
-        ocupacion_porcentaje < 75
-        or productos_danados > 0
-        or productos_caidos > 0
-    ):
-        estado = "RESURTIR"
+    if espacios_vacios == 0:
+        porcentaje_ocupacion = None
+        ocupacion_display = "N/D — REVISAR"
+        estado = "REVISAR"
+        advertencia = NO_EMPTY_WARNING
     else:
-        estado = "OPTIMO"
+        total_observado = botellas_ok + espacios_vacios
+        porcentaje_ocupacion = round((botellas_ok / total_observado) * 100, 1)
+        ocupacion_display = f"{porcentaje_ocupacion}%"
+        advertencia = None
+        if (
+            porcentaje_ocupacion < OCCUPANCY_THRESHOLD
+            or productos_danados > 0
+            or productos_caidos > 0
+        ):
+            estado = "RESURTIR"
+        else:
+            estado = "OPTIMO"
 
     return {
         "botellas_ok": botellas_ok,
         "espacios_vacios": espacios_vacios,
         "faltantes_estimados": faltantes_estimados,
-        "ocupacion_porcentaje": ocupacion_porcentaje,
+        "porcentaje_ocupacion": porcentaje_ocupacion,
+        "ocupacion_porcentaje": porcentaje_ocupacion,
+        "ocupacion_display": ocupacion_display,
         "estado": estado,
         "productos_danados": productos_danados,
         "productos_caidos": productos_caidos,
+        "advertencia": advertencia,
     }
 
 
@@ -96,19 +120,107 @@ def decode_frame(data: bytes | str) -> np.ndarray | None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global model
-    if not MODEL_PATH.is_file():
+    if ENGINE_PATH.is_file():
+        import torch
+
+        if torch.cuda.is_available():
+            from ultralytics import YOLO
+
+            logger.info("CUDA disponible; cargando modelo TensorRT %s", ENGINE_PATH)
+            model = YOLO(str(ENGINE_PATH), task="detect")
+            yield
+            model = None
+            return
+        logger.info("Hay un motor TensorRT, pero CUDA no está disponible; se usará el checkpoint .pt.")
+
+    checkpoint_path = MODEL_PATH if MODEL_PATH.is_file() else MODEL_FALLBACK_PATH
+    if not checkpoint_path.is_file():
         logger.error(
-            f"No se encontró el modelo en {MODEL_PATH}. "
-            "La web estará disponible, pero la inferencia requiere models/best.pt."
+            "No se encontró models/best.pt ni models/best_v3.pt. "
+            "La web estará disponible, pero la inferencia requiere uno de esos archivos."
         )
         yield
         return
 
     from ultralytics import YOLO
 
-    model = YOLO(str(MODEL_PATH))
+    if checkpoint_path == MODEL_FALLBACK_PATH:
+        logger.warning("models/best.pt no existe; se utilizará %s", checkpoint_path)
+    model = YOLO(str(checkpoint_path), task="detect")
     yield
     model = None
+
+
+def predict_image(image: np.ndarray) -> Any:
+    return model.predict(
+        source=image,
+        conf=PREDICT_CONFIDENCE,
+        iou=PREDICT_IOU,
+        imgsz=PREDICT_IMAGE_SIZE,
+        verbose=False,
+    )[0]
+
+
+def extract_detections(result: Any) -> list[dict[str, Any]]:
+    if result.boxes is None:
+        return []
+
+    detections = []
+    coordinates = result.boxes.xyxy.cpu().numpy()
+    class_ids = result.boxes.cls.cpu().numpy().astype(int)
+    confidences = result.boxes.conf.cpu().numpy()
+    for box, class_id, confidence in zip(coordinates, class_ids, confidences):
+        class_id = int(class_id)
+        confidence = float(confidence)
+        if confidence < UMBRAL_POR_CLASE.get(class_id, PREDICT_CONFIDENCE):
+            continue
+        x1, y1, x2, y2 = (float(value) for value in box)
+        detections.append({
+            "class_id": class_id,
+            "box": (x1, y1, x2, y2),
+            "conf": confidence,
+        })
+    return detections
+
+
+def detections_to_metrics(detections: list[dict[str, Any]]) -> dict[str, Any]:
+    boxes = [
+        (detection["class_id"], *detection["box"])
+        for detection in detections
+    ]
+    return calculate_metrics(boxes)
+
+
+def encode_audit_result(
+    image: np.ndarray,
+    result: Any,
+) -> dict[str, Any]:
+    detections = extract_detections(result)
+    annotated = image.copy()
+    for detection in detections:
+        class_id = detection["class_id"]
+        x1, y1, x2, y2 = detection["box"]
+        label, color = CLASS_INFO.get(class_id, (f"CLASE {class_id}", (255, 255, 255)))
+        cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+        cv2.putText(
+            annotated,
+            f"{label} {detection['conf'] * 100:.0f}%",
+            (int(x1), max(20, int(y1) - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+
+    encoded_ok, jpeg = cv2.imencode(".jpg", annotated)
+    if not encoded_ok:
+        raise HTTPException(status_code=500, detail="No fue posible codificar la imagen anotada.")
+
+    return {
+        **detections_to_metrics(detections),
+        "imagen_anotada": base64.b64encode(jpeg.tobytes()).decode("ascii"),
+    }
 
 
 app = FastAPI(title="Auditoría de Anaqueles", lifespan=lifespan)
@@ -124,49 +236,58 @@ app.add_middleware(
 @app.post("/auditar")
 async def auditar(file: UploadFile = File(...)) -> dict[str, Any]:
     image_bytes = await file.read()
-    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="El archivo recibido no es una imagen válida.")
 
     if model is None:
         raise HTTPException(status_code=503, detail="El modelo de auditoría no está disponible.")
 
-    result = (await run_in_threadpool(model.predict, source=image, verbose=False))[0]
-    annotated = image.copy()
-    detections: list[tuple[int, float, float, float, float]] = []
+    result = await run_in_threadpool(predict_image, image)
+    return encode_audit_result(image, result)
 
-    if result.boxes is not None:
-        coordinates = result.boxes.xyxy.cpu().numpy()
-        class_ids = result.boxes.cls.cpu().numpy().astype(int)
-        for box, class_id in zip(coordinates, class_ids):
-            x1, y1, x2, y2 = (float(value) for value in box)
-            detections.append((class_id, x1, y1, x2, y2))
 
-            label, color = CLASS_INFO.get(class_id, (f"CLASE {class_id}", (255, 255, 255)))
-            top_left = (int(x1), int(y1))
-            bottom_right = (int(x2), int(y2))
-            cv2.rectangle(annotated, top_left, bottom_right, color, 2)
-            text_y = max(20, int(y1) - 8)
-            cv2.putText(
-                annotated,
-                label,
-                (int(x1), text_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                color,
-                2,
-                cv2.LINE_AA,
+@app.post("/auditar-lote")
+async def auditar_lote(files: List[UploadFile] = File(...)) -> dict[str, Any]:
+    if not files:
+        raise HTTPException(status_code=400, detail="Selecciona al menos una imagen.")
+    if model is None:
+        raise HTTPException(status_code=503, detail="El modelo de auditoría no está disponible.")
+
+    images = []
+    filenames = []
+    for index, file in enumerate(files, start=1):
+        image_bytes = await file.read()
+        image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if image is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El archivo {file.filename or index} no es una imagen válida.",
             )
+        images.append(image)
+        filenames.append(file.filename or f"imagen_{index}")
 
-    encoded_ok, jpeg = cv2.imencode(".jpg", annotated)
-    if not encoded_ok:
-        raise HTTPException(status_code=500, detail="No fue posible codificar la imagen anotada.")
+    predictions = await run_in_threadpool(
+        model.predict,
+        source=images,
+        conf=PREDICT_CONFIDENCE,
+        iou=PREDICT_IOU,
+        imgsz=PREDICT_IMAGE_SIZE,
+        verbose=False,
+    )
+    if len(predictions) != len(images):
+        raise HTTPException(
+            status_code=500,
+            detail="La inferencia por lote no devolvió un resultado para cada imagen.",
+        )
 
-    return {
-        **calculate_metrics(detections),
-        "imagen_anotada": base64.b64encode(jpeg.tobytes()).decode("ascii"),
-    }
+    results = []
+    for filename, image, prediction in zip(filenames, images, predictions):
+        results.append({
+            "nombre_archivo": filename,
+            **encode_audit_result(image, prediction),
+        })
+    return {"total_fotos": len(results), "resultados": results}
 
 
 @app.websocket("/ws/auditar")
@@ -196,47 +317,31 @@ async def auditar_en_vivo(websocket: WebSocket) -> None:
                 await websocket.close(code=1011, reason="El modelo de auditoría no está disponible.")
                 return
 
-            result = (await run_in_threadpool(
-                model.predict,
-                source=image,
-                conf=0.28,
-                imgsz=640,
-                verbose=False,
-            ))[0]
+            result = await run_in_threadpool(predict_image, image)
             frame_height, frame_width = image.shape[:2]
             detections: list[dict[str, Any]] = []
-            metric_boxes: list[tuple[int, float, float, float, float]] = []
+            pixel_detections = extract_detections(result)
+            for detection in pixel_detections:
+                x1, y1, x2, y2 = detection["box"]
+                class_id = detection["class_id"]
+                detections.append({
+                    "box": [
+                        max(0.0, min(1.0, x1 / frame_width)),
+                        max(0.0, min(1.0, y1 / frame_height)),
+                        max(0.0, min(1.0, x2 / frame_width)),
+                        max(0.0, min(1.0, y2 / frame_height)),
+                    ],
+                    "class_id": class_id,
+                    "label": CLASS_INFO.get(class_id, (f"CLASE {class_id}",))[0],
+                    "conf": detection["conf"],
+                })
 
-            if result.boxes is not None:
-                coordinates = result.boxes.xyxy.cpu().numpy()
-                class_ids = result.boxes.cls.cpu().numpy().astype(int)
-                confidences = result.boxes.conf.cpu().numpy()
-                for box, class_id, confidence in zip(coordinates, class_ids, confidences):
-                    x1, y1, x2, y2 = (float(value) for value in box)
-                    metric_boxes.append((class_id, x1, y1, x2, y2))
-                    label = CLASS_INFO.get(class_id, (f"CLASE {class_id}",))[0]
-                    detections.append({
-                        "box": [
-                            max(0.0, min(1.0, x1 / frame_width)),
-                            max(0.0, min(1.0, y1 / frame_height)),
-                            max(0.0, min(1.0, x2 / frame_width)),
-                            max(0.0, min(1.0, y2 / frame_height)),
-                        ],
-                        "class_id": int(class_id),
-                        "label": label,
-                        "conf": float(confidence),
-                    })
-
-            metrics = calculate_metrics(metric_boxes)
+            metrics = detections_to_metrics(pixel_detections)
             await websocket.send_json({
                 "detections": detections,
-                "botellas_ok": metrics["botellas_ok"],
-                "espacios_vacios": metrics["espacios_vacios"],
-                "faltantes_estimados": metrics["faltantes_estimados"],
+                **metrics,
                 "producto_danado": metrics["productos_danados"],
                 "producto_caido": metrics["productos_caidos"],
-                "ocupacion_porcentaje": metrics["ocupacion_porcentaje"],
-                "estado": metrics["estado"],
             })
     except WebSocketDisconnect:
         pass

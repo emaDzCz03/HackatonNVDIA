@@ -32,10 +32,23 @@ asistente conversacional y cálculos deterministas de margen e inventario.
 
 ## Auditoría de anaqueles
 
-El servicio FastAPI usa el modelo YOLOv8 en `models/best.pt`. La web puede
-iniciarse sin el modelo, pero la inferencia responderá que no está disponible
-hasta que copies allí `best.pt`. El ZIP de `docs/datos` actualmente disponible
-contiene imágenes y un CSV, no los pesos del modelo.
+El servicio FastAPI prefiere `models/best.engine` cuando CUDA está disponible;
+en los demás casos carga `models/best.pt`. Si este archivo todavía no existe,
+usa `models/best_v3.pt` como respaldo. El archivo `best.pt` incluido en
+`models/modelo_auditoria_yolo.zip` ya está extraído en `models/best.pt`.
+Los umbrales de confianza son 0.35 para botellas, 0.20 para espacios vacíos y
+0.30 para productos dañados o caídos.
+
+La ocupación se calcula con las detecciones de botellas y espacios vacíos. Si
+no se detecta ningún espacio vacío, el resultado es `REVISAR` y muestra
+`N/D — REVISAR`, nunca 100%. El endpoint `POST /auditar-lote` acepta varias
+imágenes en el campo multipart `files` y devuelve los mismos resultados que
+`POST /auditar`.
+
+El script `test_vacios.py` cuenta cuántas imágenes contienen detecciones de
+espacios vacíos. Por defecto busca imágenes tanto sueltas como dentro de ZIPs
+en `docs/datos`; para usar otra carpeta, ejecuta
+`python test_vacios.py --images-dir ruta\a\imagenes`.
 
 En Windows, instala las dependencias y levanta el servicio desde la raíz del
 repositorio. El primer arranque genera `cert.pem` y `key.pem` autofirmados,

@@ -693,6 +693,12 @@ h1 span,
   color: #286b42;
 }
 
+.audit-state.is-revisar,
+.audit-attention.is-revisar {
+  background: #fff1cc;
+  color: #805500;
+}
+
 .audit-state.is-resurtir,
 .audit-state.is-vacio {
   background: #fff0e8;
@@ -704,6 +710,11 @@ h1 span,
   color: #a34420;
   font-size: 12px;
   font-weight: 650;
+}
+
+.audit-attention.is-revisar {
+  padding: 10px 12px;
+  border-radius: 6px;
 }
 
 .audit-annotated {
